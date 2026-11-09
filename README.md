@@ -1,163 +1,310 @@
-# HW5 — Build a university IT helpdesk with LangGraph
 
-**CSS-4007 · Artificial Intelligence**  
-**Due:** 8 November 2026, 23:59 (UTC+5)
+# CSS-4007 HW5 — University IT Helpdesk with LangGraph
 
-## Start from this repository
+**Student:** Sofiya Serbina  
+**Course:** CSS-4007 Artificial Intelligence  
+**Implementation:** Python 3.9, LangGraph, OpenAI `gpt-4o-mini`, SQLite
 
-1. Fork [ardakshalkar/css4007-hw5](https://github.com/ardakshalkar/css4007-hw5) and keep your fork public, as for the earlier homeworks.
-2. Clone your fork and work there. Do not open a pull request to the starter repository.
-3. Read [SCENARIOS.md](SCENARIOS.md) to see the example conversations and what the finished application should do.
-4. Read [data/README.md](data/README.md), then inspect the supplied JSON files. Use these fixtures for your demonstrations.
-5. Write your code and fill in SUBMISSION.md as you complete the parts. The starter supplies the task and data; you implement the graph, tools, memory and tests.
+This repository contains a terminal-based demonstration of an IT helpdesk for a **fictional university**. It retrieves Wi-Fi and password instructions, checks simulated service status, creates local support ticket drafts, and preserves conversation context and user language preferences.
 
-### Set up your environment
+No real university services are queried, and no tickets are submitted.
 
-Create a virtual environment with python -m venv .venv. Activate it with .venv\Scripts\Activate.ps1 in PowerShell, or source .venv/bin/activate on macOS/Linux. Then run python -m pip install -r requirements.txt.
+## Project Structure
 
-Part 1 needs no API key. For the model parts, copy .env.example to .env and set your key and an available tool-capable model identifier. The dependency list includes the OpenAI adapter; if you choose another provider, replace it with the appropriate adapter and document your setup. The SQLite checkpoint package is supplied for a local storage option; explain your final storage choice.
+| File or folder | Purpose |
+| --- | --- |
+| `part1_graph.py` | Deterministic LangGraph routing for S01–S05 |
+| `helpdesk_tools.py` | Three reusable local tools |
+| `test_tools_manual.py` | Direct tool demonstrations |
+| `part2_agent.py` | LLM agent, tool-calling loop and S06–S09, S14 |
+| `part3_memory.py` | Persistent conversation and user memory, S10–S13 |
+| `tests/test_helpdesk.py` | Automated tests using a fake model |
+| `.github/workflows/tests.yml` | GitHub Actions continuous integration |
+| `requirements.lock.txt` | Pinned dependencies |
+| `data/` | Supplied fictional helpdesk data and scenarios |
+| `outputs/` | Saved execution traces |
+| `SUBMISSION.md` | Graphs, explanations, experimental results |
 
-The starter dependencies are not a tested, pinned environment for a completed application. Pin the versions you actually use once your code runs, and record your Python version. No application entry point is supplied: include your own exact run commands in your README.
+## 1. Environment Setup
 
-## The scenario
+The project was developed with Python 3.9. The GitHub Actions workflow uses Python 3.9 on Ubuntu 24.04.
 
-A university IT helpdesk receives messages such as “I cannot connect to Wi-Fi” and “I forgot my password.” The assistant should find the relevant instructions, check whether a service is down, and help prepare a support ticket if the problem remains unresolved. When a user returns, it should remember the conversation and their saved preference for the language of replies.
+Clone the repository:
 
-Build this assistant in stages using **LangGraph**. Start with a small program whose route you can explain. Then add model decisions, tools and memory. A terminal application is enough.
-
-This is a practice version of a real helpdesk workflow. Use the supplied fictional helpdesk information and invented users. It does not connect to the university's systems or submit real tickets.
-
-## Part 1 — Understand how a graph makes a decision
-
-First build a small helpdesk graph **without an LLM**. It handles only Wi-Fi questions and password questions.
-
-Your graph must follow this structure:
-
-```text
-START → read_request → choose the next node
-                         ├─ wifi_help     → END
-                         ├─ password_help → END
-                         └─ other_help    → END
+```bash
+git clone https://github.com/vesta-12/css4007-hw5.git
+cd css4007-hw5
 ```
 
-Use these routing rules:
+Create and activate a virtual environment:
 
-- If the message contains `wifi` or `wi-fi`, send it to `wifi_help`.
-- Otherwise, if it contains `password`, send it to `password_help`.
-- Otherwise, send it to `other_help`, which asks the user whether the problem concerns Wi-Fi or a password.
-- Ignore differences between uppercase and lowercase letters.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-The two help nodes should return the corresponding instructions from `data/helpdesk.json`. Use separate LangGraph nodes and a conditional edge.
+On Windows PowerShell:
 
-### Decide what your state holds
+```powershell
+.venv\Scripts\Activate.ps1
+```
 
-Use at least these fields:
+Install the pinned dependencies:
 
-| Field | What it holds |
+```bash
+python -m pip install -r requirements.lock.txt
+```
+
+Check the environment:
+
+```bash
+python --version
+python -m pip check
+```
+
+### API Configuration
+
+Part 1 and the automated tests do not require an API key.
+
+Parts 2 and 3 use a real OpenAI model. Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Configure the following variables in `.env`:
+
+```dotenv
+OPENAI_API_KEY=YOUR_PRIVATE_KEY
+MODEL_NAME=gpt-4o-mini
+LANGSMITH_TRACING=false
+```
+
+An OpenAI API key with available API credits is required for the real model demonstrations.
+
+Never commit `.env` or expose private API keys.
+
+## 2. Run Part 1 — Graph Routing
+
+Part 1 uses LangGraph without an LLM.
+
+Run all five routing scenarios:
+
+```bash
+python part1_graph.py
+```
+
+The application demonstrates:
+
+- Wi-Fi keyword routing.
+- Case-insensitive password routing.
+- Fallback for unsupported problems.
+- Priority when Wi-Fi and password both appear.
+- An improved graph with a clarification node.
+
+Results are saved to:
+
+```text
+outputs/S01_part1.json
+outputs/S02_part1.json
+outputs/S03_part1.json
+outputs/S04_part1.json
+outputs/S05_part1.json
+```
+
+Each trace records the execution route, state updates and final state.
+
+## 3. Run Part 2 — Model and Tools
+
+Part 2 adds three reusable tools:
+
+| Tool | Function |
 | --- | --- |
-| `message` | The user's original message |
-| `category` | The category identified by `read_request` |
-| `reply` | The response produced by a help node |
+| `find_instructions` | Retrieves local Wi-Fi or password instructions |
+| `check_service_status` | Checks the supplied service-status snapshot |
+| `prepare_ticket` | Validates and saves a local ticket draft |
 
-Before writing code, draw the graph and answer:
+The model decides which tools to request. LangGraph executes the tool loop and returns tool results to the model.
 
-1. What information does each node need to read? What does it change?
-2. What is the difference between a node returning an update to the state and a conditional edge choosing the next node?
-3. Does the next node receive only the previous node's update, or the current graph state?
-4. What do `START`, `END`, and compiling a graph mean in this program?
+First, test the tools independently:
 
-### Predict, run, explain
+```bash
+python test_tools_manual.py
+```
 
-Predict the route for each message before running your code:
+Run the model demonstrations:
 
-- `I cannot connect to Wi-Fi.`
-- `I forgot my PASSWORD.`
-- `My laptop screen is broken.`
-- `My Wi-Fi password does not work.`
+```bash
+python part2_agent.py --scenario S06
+python part2_agent.py --scenario S07
+python part2_agent.py --scenario S08
+python part2_agent.py --scenario S09
+python part2_agent.py --scenario S14
+```
 
-Then run all four. For each run, save the order of nodes and the state after each node. Compare it with your prediction. Explain what happens when a message mentions both Wi-Fi and a password, and which rule causes that result.
+These commands perform real model calls and may consume API credits.
 
-Now change the graph: when both topics appear, send the request to a new `clarify_problem` node that asks which problem the user wants to solve first. Show the changed graph and the new execution trace.
+The status profiles demonstrate different conditional behavior:
 
-Finish by explaining **what LangGraph controls here** and **what your own Python functions decide**. There is no model making decisions in this part.
+- `normal`: Wi-Fi is operational.
+- `wifi_outage`: Wi-Fi has a known outage.
+- `status_unavailable`: Wi-Fi status is unknown.
+- `recovery_outage`: Account recovery has a known outage.
 
-## Part 2 — Let a model choose tools
+A conditional ticket is prepared only when the requested service has been confirmed operational.
 
-Extend the same helpdesk with a model that can use three reusable tools:
+Ticket drafts are saved under:
 
-| Tool | What it does |
-| --- | --- |
-| `find_instructions` | Looks up Wi-Fi or password instructions in the local helpdesk data |
-| `check_service_status` | Looks up whether the requested service is operating or has a known outage |
-| `prepare_ticket` | Produces a local ticket draft from the problem description and steps already tried |
+```text
+outputs/tickets/
+```
 
-Each tool must work when called directly, without the agent. Then connect the tools to the model through your graph. A ticket is a draft saved locally; no message is sent to a real helpdesk.
+They are local JSON files and are never submitted to a real helpdesk.
 
-Show one request that needs more than one tool. For example: “Wi-Fi still does not work after I followed the instructions. Is it down? If it is working, help me prepare a ticket.” The assistant's choice should depend on the tool results.
+Model execution traces are saved to `outputs/S##_part2.json`.
 
-Draw the execution loop: the model requests a tool, your program runs it, its result returns to the model, and the model either continues or answers. Include a limit so the loop cannot run forever, and explain where you enforce it.
+## 4. Run Part 3 — Persistent Memory
 
-In `SUBMISSION.md`, explain:
+Part 3 implements two types of memory.
 
-1. How does the graph decide between running a tool and ending with an answer?
-2. Which component requests a tool, and which component actually executes it?
-3. What changes in the state after a tool result returns?
-4. What makes this part different from the fixed routing rules in Part 1?
+**Conversation memory:** LangGraph `SqliteSaver` checkpoints the conversation state, including previous user and assistant messages.
 
-Save an actual run showing the model requests, tool results, and final answer. State which model and provider you used. Use the supplied service-status snapshots to show that the same conditional request leads to different behaviour when Wi-Fi is operating, down, or its status is unknown. See SCENARIOS.md for the interactions.
+**User memory:** A separate SQLite database stores the preferred response language for each invented user.
 
-## Part 3 — Remember the user and the conversation
+Run:
 
-Add two separate kinds of memory:
+```bash
+python part3_memory.py --scenario S10
+python part3_memory.py --scenario S11
+python part3_memory.py --scenario S12
+python part3_memory.py --scenario S13
+```
 
-- **Conversation memory:** the current problem, previous messages and steps already tried in this conversation.
-- **User memory:** a saved preference, such as “reply in Kazakh,” that is available in a later conversation for the same invented user.
+These scenarios demonstrate:
 
-Use a LangGraph checkpointer to save conversation state, and persistent storage for the user preference. Explain what a `thread_id` identifies and how it differs from a user identifier. Memory must survive closing and restarting the program.
+- S10: Recalling previous troubleshooting actions.
+- S11: Restoring conversation and user memory after a real process restart.
+- S12: Remembering language preferences in a new conversation without copying the previous conversation history.
+- S13: Keeping different users' memory separate.
 
-Demonstrate these situations:
+The scenario runner uses the supplied user identifiers, thread identifiers, messages and reset/restart events from `data/scenarios.json`.
 
-1. A user reports a Wi-Fi problem, then says “I already tried that.” The assistant uses the earlier messages to understand what “that” means.
-2. Close the program and start it again. Resume the same conversation with its previous state.
-3. Start a new conversation for the same invented user. The saved language preference is available, while the previous conversation is a separate thread.
-4. Start a conversation for a different invented user. The first user's preference must not appear.
+It launches a new Python process for `restart_process` events rather than simulating a restart in the same application instance.
 
-For each demonstration, show what was read from conversation memory, user memory, or the helpdesk reference file. Explain why looking up Wi-Fi instructions is retrieval, while recalling the user's chosen language is memory.
+### Memory Storage
 
-## Part 4 — Make it easy for someone else to run your work
+Persistent files are stored in:
 
-This means another person can download your code, follow your instructions, and run the same demonstrations on their computer.
+```text
+local-storage/
+└── <scenario-id>/
+    ├── checkpoints.sqlite
+    └── preferences.sqlite
+```
 
-In your repository:
+`checkpoints.sqlite` stores conversation history, indexed by the composite LangGraph thread identifier `user_id/thread_id`.
 
-1. Add a `README.md` with the exact steps to install the required packages, configure a model API key, start the program, and run the examples. State your Python version.
-2. Include a dependency file with the package versions you used. Do not make the reader guess which LangGraph version works with your code.
-3. Explain where memory files are saved and how to clear them to start again.
-4. Add tests that check routing, the three tools, saved memory after a restart, and separation between users and conversations. Explain what each test would catch if the code broke.
-5. Set up GitHub Actions to run these tests automatically whenever you push changes. This is continuous integration, or CI. The tests must work without a private model API key; you may substitute a clearly labelled fake model in tests. Keep the real model demonstration from Part 2 separate.
-6. Commit as you complete each stage, with messages explaining what changed.
+`preferences.sqlite` stores language preferences indexed by `user_id`.
 
-Keep API keys in environment variables or an ignored `.env` file. Do not commit keys, live memory databases, or personal information. Use invented identifiers such as `demo-user-a` and `demo-user-b` in your saved examples.
+A new conversation for the same user can retrieve the saved language without inheriting another conversation's messages.
 
-## Demonstrate the finished application
+### Clearing Memory
 
-Run S01–S14 from data/scenarios.json. Follow reset and restart events as explained in data/README.md. Fill in the scenario table in SUBMISSION.md and save your own logs. SCENARIOS.md shows the expected user experience; it is not a set of measured results.
+Close the program before deleting the database files.
 
-## What to hand in
+To clear all local memory on macOS or Linux:
 
-Submit your repository link. It should contain:
+```bash
+rm -rf local-storage
+```
 
-- Your LangGraph code for all four parts.
-- `SUBMISSION.md` with your drawings, explanations and predictions compared with actual runs.
-- Small execution logs in `outputs/` showing which nodes and tools ran and what changed in the state.
-- Setup instructions, a dependency file, tests and the GitHub Actions workflow.
+To clear local ticket drafts:
 
-Push your finished work to your public fork and submit its link on the LMS. The exact HW5 LMS submission destination is still to be provided by the professor.
+```bash
+rm -rf outputs/tickets
+```
 
-## References
+The Part 3 runner also respects the `reset_before` setting in the supplied scenarios.
 
-- [LangGraph Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
-- [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
-- [LangGraph memory](https://docs.langchain.com/oss/python/langgraph/add-memory)
+Execution traces are stored separately under `outputs/`.
 
+## 5. Automated Tests
 
+Run:
+
+```bash
+python -m pytest tests/ -v
+```
+
+The tests cover:
+
+- Original and improved graph routing.
+- Instruction lookup.
+- Service-status profiles.
+- Ticket creation and validation.
+- Rejection of some explicitly supplied secrets.
+- Persistent user preferences.
+- Conversation restoration from SQLite.
+- Isolation between users and conversations.
+
+The automated tests use a clearly labelled `FakeChatModel`.
+
+This allows the LangGraph model node to be tested without making OpenAI API calls or providing a private key.
+
+Real model behavior is demonstrated separately through the Part 2 and Part 3 scenarios.
+
+## 6. Continuous Integration
+
+GitHub Actions is configured in:
+
+```text
+.github/workflows/tests.yml
+```
+
+The workflow runs automatically on pushes and pull requests.
+
+It uses:
+
+- Ubuntu 24.04.
+- Python 3.9.
+- Pinned dependencies from `requirements.lock.txt`.
+- `pytest` without a private model API key.
+
+The GitHub Actions workflow has been successfully tested.
+
+## 7. Execution Logs
+
+The project includes the following scenario groups:
+
+| Part | Scenarios | Output |
+| --- | --- | --- |
+| Part 1 | S01–S05 | `outputs/S##_part1.json` |
+| Part 2 | S06–S09, S14 | `outputs/S##_part2.json` |
+| Part 3 | S10–S13 | `outputs/S##_part3.json` |
+
+The saved JSON files contain actual execution traces.
+
+Part 1 logs include graph nodes, state updates and routing decisions.
+
+Part 2 logs include model tool requests, tool results and final answers.
+
+Part 3 logs include conversation memory, user preferences and results of persistent-memory demonstrations.
+
+Model-generated text and ticket identifiers may differ between runs.
+
+## 8. Security and Limitations
+
+The project is an educational demonstration using fictional university data.
+
+- No real IT service is contacted.
+- Service statuses are supplied snapshots, not real-time monitoring.
+- Tickets are local drafts and are not submitted externally.
+- API keys are stored in environment variables or an ignored `.env` file.
+- Local SQLite databases and generated ticket drafts must not be committed.
+- The model is instructed not to invent troubleshooting actions or request passwords and recovery codes.
+- The local validator blocks certain explicit secret formats but is not a complete secret-redaction system.
+- The preference parser recognizes limited English phrases for Kazakh, Russian and English.
+- The agent has a graph recursion limit of 15 to prevent unlimited execution.
+- The application is a scenario-driven terminal demonstration rather than a general-purpose interactive chat interface.
+
+For diagrams, design decisions, memory explanations and results of all 14 scenarios, see [SUBMISSION.md](SUBMISSION.md).
